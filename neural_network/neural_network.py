@@ -42,7 +42,7 @@ class NeuralNetwork():
                 
         # initialize weights and bias for hidden layer
         self.h_weight = np.random.randn(inputs, hidden)
-        self.h_bias = np.random.randn(1,hidden)
+        self.h_bias = np.random.randn(1, hidden)
                
         # initialize weights and bias for output layer
         self.o_weight = np.random.randn(hidden, outputs)
@@ -54,7 +54,11 @@ class NeuralNetwork():
     
     """ Softmax activation function """
     def softmax_activation(self, n_inputs):
-        return np.exp(n_inputs) / np.sum(np.exp(n_inputs), axis=1)
+        # softmax is e^input / sum( e^input for all inputs )
+        # add axis=1 to perform operation within each row in the matrix
+        # subtract the max of the row to prevent overflow error
+        e_values = np.exp(n_inputs - np.max(n_inputs, axis=1))       
+        return e_values / np.sum(e_values, axis=1)
                    
     def loss(self, y_true, y_pred):
         """
@@ -69,12 +73,14 @@ class NeuralNetwork():
         Returns:
             loss: array of length N representing loss for each example.
         """
+        # to handle np.log(0)
+        y_pred_clip = np.clip(y_pred, 1e-8, 1-1e-8)
         
-        # y_true one-hot label cross_entropy loss simplifies to -log(y_pred)
-        ce_loss = -np.log(y_pred)
+        # y_true one-hot label cross_entropy
+        ce_loss = np.sum(y_pred_clip * y_true, axis=1)
                 
         # sum loss over cross entropy elements
-        loss = np.sum(ce_loss, axis=1)
+        loss = -np.log(ce_loss)
         
         return loss
         
@@ -88,7 +94,7 @@ class NeuralNetwork():
             loss: array of length N representing loss for each example.
         """
         predictions = self.predict(X)
-        loss = self.loss(y, predictions)
+        loss = np.mean(self.loss(y_true=y, y_pred=predictions))
         
         return loss
         
@@ -108,19 +114,27 @@ class NeuralNetwork():
         for row in X:
             
             # multiply inputs by weights plus a bias
+            # row shape is (1, 784), self.h_weights is (784, # hidden neurons)
+            # transpose row shape to be (784, 1) to do matrix multiplication
+            # layer_output shape = (1, # hidden neurons)
             layer_output = np.dot(row.T, self.h_weight) + self.h_bias
         
-            # pass through ReLU activation function
+            # pass through ReLU activation function for each element layout_output
+            # relu_output shape = (1, # hidden neurons)
             relu_output = self.relu_activation(layer_output)
             
-            # take relu_output and multiply by another layer
-            # to get to the output vector of 10
-            output = np.dot(relu_output.T, self.o_weight) + self.o_bias
+            # take relu_output and multiply by another layer to get to the output vector of 10
+            # relu_output shape is (1, # hidden neurons), self.o_weight is shape (# hidden neurons, 10)
+            # output shape is (1,10)
+            output = np.dot(relu_output, self.o_weight) + self.o_bias
 
-            # pass final output through softmax
+            # pass output through softmax activation function to get prediction scores
+            # softmax_output shape is (1,10)
             softmax_output = self.softmax_activation(output)
         
-            y_pred.append(softmax_output)        
+            y_pred.append(softmax_output)
+            
+        return y_pred
         
     def train(self, X, y, lr=0.0001, max_epochs=10, x_val=None, y_val=None):
         """
@@ -159,6 +173,7 @@ class NeuralNetwork():
 
 
             #update the class weights and biases
+            
+            epoch += 1
         
         return
-                
