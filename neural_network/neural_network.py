@@ -59,45 +59,7 @@ class NeuralNetwork():
         # subtract the max of the row to prevent overflow error
         e_values = np.exp(n_inputs - np.max(n_inputs, axis=1))       
         return e_values / np.sum(e_values, axis=1)
-                   
-    def loss(self, y_true, y_pred):
-        """
-        Compute categorical cross-entropy loss function. 
-        
-        Sum loss contributions over the outputs (axis=1), but 
-        average over the examples (axis=0)
-        
-        Args: 
-            y_true: NxD numpy array with N examples, D outputs (one-hot labels).
-            y_pred: NxD numpy array with N examples, D outputs (probabilities).
-        Returns:
-            loss: array of length N representing loss for each example.
-        """
-        # to handle np.log(0)
-        y_pred_clip = np.clip(y_pred, 1e-8, 1-1e-8)
-        
-        # y_true one-hot label cross_entropy
-        ce_loss = np.sum(y_pred_clip * y_true, axis=1)
-                
-        # sum loss over cross entropy elements
-        loss = -np.log(ce_loss)
-        
-        return loss
-        
-    def evaluate(self, X, y):
-        """
-        Make predictions and compute loss.
-        Args:
-            X: NxM numpy array where n-th row is an input.
-            y: NxD numpy array with N examples and D outputs (one-hot labels).
-        Returns:
-            loss: array of length N representing loss for each example.
-        """
-        predictions = self.predict(X)
-        loss = np.mean(self.loss(y_true=y, y_pred=predictions))
-        
-        return loss
-        
+                                  
     def predict(self, X):
         """
         Make predictions on inputs X.
@@ -135,6 +97,38 @@ class NeuralNetwork():
             y_pred.append(softmax_output)
             
         return y_pred
+    
+    def loss(self, y_true, y_pred):
+        """
+        Compute categorical cross-entropy loss function. 
+        
+        Sum loss contributions over the outputs (axis=1), but 
+        average over the examples (axis=0)
+        
+        Args: 
+            y_true: NxD numpy array with N examples, D outputs (one-hot labels).
+            y_pred: NxD numpy array with N examples, D outputs (probabilities).
+        Returns:
+            loss: array of length N representing loss for each example.
+        """                        
+        # sum loss over cross entropy elements
+        loss = -np.sum(np.log(y_pred) * y_true)
+        
+        return loss
+        
+    def evaluate(self, X, y):
+        """
+        Make predictions and compute loss.
+        Args:
+            X: NxM numpy array where n-th row is an input.
+            y: NxD numpy array with N examples and D outputs (one-hot labels).
+        Returns:
+            loss: array of length N representing loss for each example.
+        """
+        predictions = self.predict(X)
+        loss = np.mean(self.loss(y_true=y, y_pred=predictions))
+        
+        return loss
         
     def train(self, X, y, lr=0.0001, max_epochs=10, x_val=None, y_val=None):
         """
@@ -152,28 +146,37 @@ class NeuralNetwork():
                      'loss' -> list containing the training loss at each epoch
                      'loss_val' -> list for the validation loss at each epoch
         """
-        # 
+        # how many times through the network
         epoch = 1
         
-        batch_size = 100
+        # what batch size to use for training
+        batch_size = 1
+        data_points = X.shape[0]
+        
+        # start with a really large number
+        min_loss = 9999999
+
+        # loss history
+        history = {}
         
         while(epoch < max_epochs):
             
-            #TODO sample X to calculate the gradient descent
+            for(batch_size < data_points):
 
-            layer_output = np.dot(X.T, self.h_weight) + self.h_bias
-
-            # pass through activation function
-            relu_output = self.relu_activation(layer_output)
-
-            # pass final output through softmax
-            softmax_output = self.softmax_activation(relu_output)
-
-            #optimize
+                loss = self.evaluate(X[batch_size:], y[batch_size:])                  
+                
+                batch_size += 1
+            
+            #derivative of categorical cross entropy loss function
+            
 
 
             #update the class weights and biases
+            self.h_weight +=
+            self.h_bias +=
+            self.o_weight +=
+            self.o_bias +=
             
             epoch += 1
         
-        return
+        return history
