@@ -1,5 +1,6 @@
 # Part 1: Defining the neural network.
 import numpy as np
+import random
 
 class NeuralNetwork():
        
@@ -41,32 +42,36 @@ class NeuralNetwork():
         np.random.seed(0)
                 
         # initialize weights and bias for hidden layer
-        self.h_weight = np.random.randn(inputs, hidden)
-        self.h_bias = np.random.randn(1, hidden)
+        self.w1 = np.random.randn(inputs, hidden)
+        self.b1 = np.random.randn(1, hidden)
+        self.wb1 = np.vstack((self.w1, self.b1)) # add row for bias
                
         # initialize weights and bias for output layer
-        self.o_weight = np.random.randn(hidden, outputs)
-        self.o_bias = np.random.randn(1, outputs)
-        
-        # initial arrays that will hold the predicted values from the forward propagation
-        # to be used later when doing backpropagation
-        #self.f_layer_outputs = []
-        #self.f_relu_outputs = []
-        #self.f_second_layer_outputs = []
-        #self.f_softmax_outputs = []
+        self.w2 = np.random.randn(hidden, outputs)
+        self.b2 = np.random.randn(1, outputs)
+        self.wb2 = np.vstack((self.w2, self.b2)) # add row for bias
             
     """ ReLU activation function """
     def relu_activation(self, n_inputs):
         return np.maximum(n_inputs, 0)
     
+    """ ReLU derivative function """
+    def relu_derivative(self, x):
+        if x > 0:
+            return 1
+        return 0
+            
     """ Softmax activation function """
     def softmax_activation(self, n_inputs):
         # softmax is e^input / sum( e^input for all inputs )
         # add axis=1 to perform operation within each row in the matrix
         # subtract the max of the row to prevent overflow error
-        e_values = np.exp(n_inputs - np.max(n_inputs, axis=1))       
-        return e_values / np.sum(e_values, axis=1)
-                                  
+        try:
+            e_values = np.exp(n_inputs - np.max(n_inputs, axis=1).reshape(-1, 1)) # shape (N, D) 
+        except:
+            print('softmax error')
+        return e_values / np.sum(e_values, axis=1).reshape(-1, 1) #change np sum to column to broadcast element division
+ 
     def predict(self, X):
         """
         Make predictions on inputs X.
@@ -75,44 +80,42 @@ class NeuralNetwork():
         Returns: 
             y_pred: NxD array where n-th row is vector of probabilities.
         """
-        # our array of predictions for rows of X
-        y_pred = []
-               
-        # for each row predict the probability that the image is a label
-        # based on the trained weights and biases. Append the prediction
-        for row in X:
+        # add column of ones to X so that we can multiply this by the last row of the wb1 matrix (which is the bias)
+        # and get the same bias. Then multiply inputs by weights
+        # X shape is (N, M+1) 
+        X = np.hstack( (X, np.ones( (X.shape[0], 1) ) ) )
             
-            # multiply inputs by weights plus a bias
-            # row shape is (1, 784), self.h_weights is (784, # hidden neurons)
-            # transpose row shape to be (784, 1) to do matrix multiplication
-            # layer_output shape = (1, # hidden neurons)
-            layer_output = np.dot(row.T, self.h_weight) + self.h_bias
-            #self.f_layer_outputs.append(layer_output[0])
+        # multiply inputs by weights plus a bias
+        # X shape is (N, 784+1), self.wb1 is (784+1, # hidden neurons)
+        # hidden_preact shape = (N, # hidden neurons)
+        hidden_preact = np.dot(X, self.wb1)
         
-            # pass through ReLU activation function for each element layout_output
-            # relu_output shape = (1, # hidden neurons)
-            relu_output = self.relu_activation(layer_output)
-            #self.f_relu_outputs.append(relu_output[0])
-            
-            # take relu_output and multiply by another layer to get to the output vector of 10
-            # relu_output shape is (1, # hidden neurons), self.o_weight is shape (# hidden neurons, 10)
-            # output shape is (1,10)
-            second_layer_output = np.dot(relu_output, self.o_weight) + self.o_bias
-            #self.f_second_layer_outputs.append(second_layer_output[0])
+        # save for back propagation
+        self.h_preact = hidden_preact
 
-            # pass output through softmax activation function to get prediction scores
-            # softmax_output shape is (1,10)
-            softmax_output = self.softmax_activation(second_layer_output)
-            #self.f_softmax_outputs.append(softmax_output[0])
-            y_pred.append(softmax_output[0])
-            
-        # convert to numpy arrays
-        y_pred = np.array(y_pred)
-        #self.f_second_layer_outputs = np.array(self.f_second_layer_outputs)
-        #self.f_relu_outputs = np.array(self.f_relu_outputs)
-        #self.f_layer_outputs = np.array(self.f_layer_outputs)
-        #self.f_softmax_outputs = np.array(self.f_softmax_outputs)
-            
+        # pass through ReLU activation function for each element layout_output
+        # relu_output shape = (N, # hidden neurons)
+        relu_output = self.relu_activation(hidden_preact)
+        
+        # take relu_output and multiply by another layer to get to the output vector of 10
+        # relu_output shape is (N, # hidden neurons + 1), self.wb2 is shape (# hidden neurons + 1, 10)
+        # softmax_preact shape is (N,10)
+        
+        # add column of ones for bias for relu_output
+        relu_output = np.hstack( (relu_output, np.ones( (relu_output.shape[0], 1) )))
+        
+        # save for back propagation
+        self.relu_out = relu_output
+        
+        softmax_preact = np.dot(relu_output, self.wb2)
+
+        # pass output through softmax activation function to get prediction scores
+        # y_pred shape is (N,10)
+        y_pred = self.softmax_activation(softmax_preact)
+        
+        # save for back propagation
+        self.yhat = y_pred
+                        
         return y_pred
     
     def loss(self, y_true, y_pred):
@@ -129,7 +132,8 @@ class NeuralNetwork():
             loss: array of length N representing loss for each example.
         """                        
         # sum loss over cross entropy elements
-        loss = -np.sum(np.log(y_pred) * y_true)
+        # clip for log(0) error
+        loss = -np.sum(np.ma.log(y_pred) * y_true, axis = 1)
         
         return loss
         
@@ -147,6 +151,15 @@ class NeuralNetwork():
         
         return loss
         
+    def accuracy(self, y_pred, y_true):
+        accuracy = 0
+        for i in range(y_true.shape[0]):
+            if(y_pred[i].argmax() == y_true[i].argmax()):
+                accuracy += 1
+
+        accuracy = accuracy / y_pred.shape[0]
+        return accuracy
+        
     def train(self, X, y, lr=0.0001, max_epochs=10, x_val=None, y_val=None, batch_size=1):
         """
         Train the neural network using stochastic gradient descent.
@@ -158,7 +171,7 @@ class NeuralNetwork():
             max_epochs: int, each epoch is one iteration through the train data.
             x_val: numpy array containing validation data inputs.
             y_val: numpy array containing validation data outputs.
-            batch_size: the number of elements
+            batch_size: the number of inputs to create a batch with
         Returns:
             history: dict with the following key, value pairs:
                      'loss' -> list containing the training loss at each epoch
@@ -167,94 +180,105 @@ class NeuralNetwork():
         # loss history
         history = {'loss': [], 'loss_val': []}
         
-        # get rows processing
-        total_rows = X.shape[0]
-        
-        # check that the batch_size given is not greater than what is the population size
-        #if batch_size > total_rows:
-        #    print('batch size given is too large, please lower the batch size')
-        #    batch_size = 1
-        if batch_size % total_rows != 0:
-            batch_size = 1
+        # each epoch is a pass through the model and back
+        for epoch in range(max_epochs):
+
+            # make a copy of training data
+            X_copy = X.copy()
+            y_copy = y.copy()
             
-        index_start = 0
-        index_end = batch_size
-        
-        for i in range(max_epochs):
-            #random_start = np.random.randint(low=0, high=pop_size)
-            #random_end = random_start + batch_size
-            #train_batch_X = X[random_start:random_end, :]
-            #train_batch_y = y[random_start:random_end, :]
-            # get sample of hyperparameter batch_size to perform stochastic gradient descent with
-            train_batch_X = X[index_start:index_end, :]
-            train_batch_y = y[index_start:index_end, :]
-             
-            test_batch_X = x_val[index_start:index_end, :]
-            test_batch_y = y_val[index_start:index_end, :]
+            # keep track of batch losses
+            batch_losses = []
+            
+            # loop through batches of copied training data used to update weights and biases until there is no more
+            while X_copy.shape[0] > 0:
                 
-            # calculate the loss with each sample batch
-            loss = self.evaluate(train_batch_X, train_batch_y)
-            loss_val = self.evaluate(test_batch_X, test_batch_y)
-            
-            # get weights to use
-            f_layer_outputs = []
-            f_relu_outputs = []
-            f_second_layer_outputs = []
-            f_softmax_outputs = []
-            
-            # predicted values from the forward propagation to be used later when doing backpropagation
-            for row in train_batch_X:
-                layer_output = np.dot(row.T, self.h_weight) + self.h_bias
-                f_layer_outputs.append(layer_output)
-        
-                # pass through ReLU activation function for each element layout_output
-                # relu_output shape = (1, # hidden neurons)
-                relu_output = self.relu_activation(layer_output)
-                f_relu_outputs.append(relu_output)
+                # get sample of hyperparameter batch_size to perform stochastic gradient descent with
+                # if there is not enough data to to a full batch_size with, use the rest of the training data
+                # train_batch_X shape is (min(batch_size, X_copy.shape[0]), 784)
+                # train_batch_y  shape is (min(batch_size, y_copy.shape[0]),10)
                 
-                # take relu_output and multiply by another layer to get to the output vector of 10
-                # relu_output shape is (1, # hidden neurons), self.o_weight is shape (# hidden neurons, 10)
-                # output shape is (1,10)
-                second_layer_output = np.dot(relu_output, self.o_weight) + self.o_bias
-                f_second_layer_outputs.append(second_layer_output)
+                xt_size = min(batch_size, X_copy.shape[0])
+                yt_size = min(batch_size, y_copy.shape[0])               
+                
+                train_batch_X = X_copy[:xt_size]
+                train_batch_y = y_copy[:yt_size]
+                                
+                # get predictions from batch with randomly initialized weights and biases with first pass
+                # but updated weights and biases after backpropagation
+                #batch_pred = self.predict(train_batch_X)
+                
+                # evaluate the loss from batch predictions and append
+                # this will set predictions and other variables to what was for the batch
+                batch_losses.append(self.evaluate(X=train_batch_X, y=train_batch_y))
+                
+                # calculate gradients
+                
+                """ self.wb2 gradient target shape is (# hidden neurons + 1 , 10)
+                
+                        self.relu_out shape is (batch_size, # hidden neurons + 1)
 
-                # pass output through softmax activation function to get prediction scores
-                # softmax_output shape is (1,10)
-                softmax_output = self.softmax_activation(second_layer_output)
-                f_softmax_outputs.append(softmax_output)
-        
-            f_layer_outputs = np.array(f_layer_outputs)
-            f_relu_outputs = np.array(f_relu_outputs)
-            f_second_layer_outputs = np.array(f_second_layer_outputs)
-            f_softmax_outputs = np.array(f_softmax_outputs)
-        
-            # take derivative of categorical cross entropy loss function with respect to
-            # the weights and biases
-            #yhat = self.predict(train_batch_X)
-            
-            # dloss_dz = softmax_output (yhat) - train_batch_y
-            # dL_w2= np.outer(dloss_dz, relu_output.T)
-            # dL_zhid = np.dot((dloss_dz.T * output.T), float(layer_output > 0)).T
-            # dL_w1 = np.outer(dL_zhid, train_batch_X)
-            dloss_dz = f_softmax_outputs - train_batch_y
-            dL_w2 = np.outer(dloss_dz, f_relu_outputs.T)
-            dL_zhid = np.dot((dloss_dz.T * f_second_layer_outputs.T), (f_layer_outputs > 0).astype(np.float)).T
-            dL_w1 = np.outer(dL_zhid, train_batch_X)
-            
-            #update the class weights and biases
-            self.h_weight += self.h_weight - (dL_w1.T * lr) # old weight - (new weight derivative value * lr)
-            self.h_bias += self.h_bias - (dL_zhid.T * lr)
-            self.o_weight += self.o_weight - (dL_w2.T *lr)
-            self.o_bias += self.o_bias - (dloss_dz.T * lr)
+                        self.relu_out.T shape is (# hidden neurons + 1, batch_size)
+                        
+                        dldZ shape is (batch_size, 10 )                        
+                        
+                        np.dot(self.relu_out.T, dldZ) shape is (# hidden neurons + 1, 10)
+                """                            
+                dLdZ = (self.yhat - train_batch_y) #shape should be (batch_size, 10)
+                assert dLdZ.shape == (xt_size, 10)
+                assert self.relu_out.T.shape == (self.hidden+1, xt_size)
+                dLdW2 = np.dot(self.relu_out.T, dLdZ)
+                    
+                #update weights and bias for second layer
+                try:
+                    self.wb2 -= dLdW2 * lr
+                except:
+                    print('wb2 subtraction error')
 
-            # redo the loop but optimized weights and biases
-            # on validation data
+                """ self.wb1 target shape is (M+1, # of hidden neurons)
+                 
+                     dldZ shape is (batch_size, 10 )
 
-            # update batch of data used to train
-            index_start += batch_size
-            index_end += batch_size
+                     self.wb2 shape is (# hidden neurons + 1, 10)
+
+                     self.wb2.T shape is (10, # hidden neurons + 1)
+
+                     np.dot(dLdZ, self.wb2.T) shape is (batch_size, # hidden neurons + 1)
+
+                     self.relu_out shape is (batch_size, # hidden neurons + 1)
+                     
+                     train_batch_X shape is (batch_size, M+1)
+                     
+                     train_batch_X.T shape is (M+1, batch_size)
+                     
+                     np.dot(train_batch_X.T, wb1_delta[:,:-1]) shape is (M+1, # of hidden neurons)
+                     
+                """
+                
+                # add column of ones to multiply bias by 
+                train_batch_X = np.hstack( (train_batch_X, np.ones( (train_batch_X.shape[0], 1) ) ) )
+                
+                # calculate gradient for layer 1
+                wb1_delta = np.dot(dLdZ, self.wb2.T) * (self.relu_out > 0).astype(np.float)                
+                
+                try:
+                    self.wb1 -= np.dot(train_batch_X.T, wb1_delta[:,:-1]) * lr
+                except:
+                    print('wb1 subtraction error')
+                
+                X_copy = X_copy[batch_size:]
+                y_copy = y_copy[batch_size:]
             
-            # add losses to history
+            # evaluate the loss of validation batch with one epoch of trained weights
+            loss_val = self.evaluate(x_val, y_val)
+                        
+            # average losses from batches
+            loss = np.mean(batch_losses)
+            
+            # get accuracy
+            #acc = self.accuracy(y_pred=self.predict(x_val), y_true=y_val)            
+                        
+            # add losses to history dictionary
             history['loss'].append(loss)
             history['loss_val'].append(loss_val)     
         
